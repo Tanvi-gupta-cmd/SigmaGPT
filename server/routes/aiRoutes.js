@@ -9,7 +9,7 @@ router.post("/chat", async (req, res) => {
   try {
     const { message, mode = "chat" } = req.body;
 
-    if (!message?.trim()) {
+    if (!message || !message.trim()) {
       return res.status(400).json({
         success: false,
         message: "Message is required.",
@@ -30,16 +30,25 @@ If the mode is optimize, improve the given solution.
 If the mode is write, create polished professional content.
 `;
 
+    const apiKey = process.env.AI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({
+        success: false,
+        message: "AI API key is not configured.",
+      });
+    }
+
     const response = await fetch(
-      "http://localhost:11434/api/chat",
+      process.env.AI_API_BASE_URL || "https://api.groq.com/openai/v1/chat/completions",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "llama3.2:1b",
-          stream: false,
+          model: process.env.AI_MODEL || "llama-3.3-70b-versatile",
           messages: [
             {
               role: "system",
@@ -50,6 +59,7 @@ If the mode is write, create polished professional content.
               content: message,
             },
           ],
+          temperature: 0.7,
         }),
       }
     );
@@ -57,34 +67,38 @@ If the mode is write, create polished professional content.
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("Ollama error:", data);
+      console.error("AI API error:", data);
 
-      return res.status(response.status).json({
+      return res.status(502).json({
         success: false,
-        message: "Ollama AI request failed.",
+        message: "AI provider request failed.",
       });
     }
 
-    const reply = data?.message?.content;
+    const reply =
+      data.choices &&
+      data.choices[0] &&
+      data.choices[0].message
+        ? data.choices[0].message.content
+        : null;
 
     if (!reply) {
-      return res.status(500).json({
+      return res.status(502).json({
         success: false,
-        message: "Ollama returned an empty response.",
+        message: "AI returned an empty response.",
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
-      reply,
+      reply: reply,
     });
   } catch (error) {
-    console.error("Ollama chat error:", error);
+    console.error("AI chat error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message:
-        "Could not connect to local AI. Make sure Ollama is running.",
+      message: "Could not connect to the AI provider.",
     });
   }
 });
